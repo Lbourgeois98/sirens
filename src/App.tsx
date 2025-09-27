@@ -1,4 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+declare global {
+  interface Window {
+    StripeOnramp?: any;
+  }
+}
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Navigation } from './components/Navigation';
 import { HomePage } from './pages/HomePage';
@@ -6,10 +11,55 @@ import { BonusesPage } from './pages/BonusesPage';
 import { PaymentsPage } from './pages/PaymentsPage';
 import { RulesPage } from './pages/RulesPage';
 import { ContactPage } from './pages/ContactPage';
-import { HelioPayment } from './components/HelioPayment';
+import { DepositForm } from './components/DepositForm';
+// ...existing code...
 
 function App() {
   const [showPayment, setShowPayment] = useState<'deposit' | 'withdrawal' | null>(null);
+  const [depositData, setDepositData] = useState<{ name: string; username: string; amount: number } | null>(null);
+  const [clientSecret, setClientSecret] = useState<string | null>(null);
+  // Fetch Stripe Onramp client secret after deposit form
+  useEffect(() => {
+    if (depositData && showPayment === 'deposit') {
+  fetch('/api/create-onramp-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      })
+        .then(res => res.json())
+        .then(data => setClientSecret(data.clientSecret))
+        .catch(() => setClientSecret(null));
+    } else {
+      setClientSecret(null);
+    }
+  }, [depositData, showPayment]);
+
+  // Stripe Onramp Widget component
+  function StripeOnrampWidget({ clientSecret }: { clientSecret: string }) {
+    const widgetRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+      if (clientSecret && widgetRef.current) {
+        // Inject Stripe script if not present
+        if (!document.getElementById('stripe-onramp-script')) {
+          const script = document.createElement('script');
+          script.id = 'stripe-onramp-script';
+          script.src = 'https://js.stripe.com/v3/';
+          script.async = true;
+          document.body.appendChild(script);
+          script.onload = () => {
+            if (window.StripeOnramp) {
+              window.StripeOnramp('pk_live_51RyFQw3xHLWv8lmEAOHH59LVElWtham2vZdh5onQjjgthirQRut6PmKzSCYxc0w0upWSbzKJyLFJ9bdmnG122siA00D0Nnt7hO').mount(widgetRef.current, { clientSecret });
+            }
+          };
+        } else {
+          if (window.StripeOnramp) {
+            window.StripeOnramp('pk_live_51RyFQw3xHLWv8lmEAOHH59LVElWtham2vZdh5onQjjgthirQRut6PmKzSCYxc0w0upWSbzKJyLFJ9bdmnG122siA00D0Nnt7hO').mount(widgetRef.current, { clientSecret });
+          }
+        }
+      }
+    }, [clientSecret]);
+    return <div ref={widgetRef} style={{ minHeight: 400 }} />;
+  }
 
   return (
     <Router>
@@ -38,12 +88,38 @@ function App() {
           </div>
         </footer>
         
-        {/* Helio Payment Modal */}
-        {showPayment && (
-          <HelioPayment
-            type={showPayment}
-            onClose={() => setShowPayment(null)}
-          />
+        {/* Stripe Crypto Onramp Modal */}
+        {showPayment === 'deposit' && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm">
+            <div className="bg-gradient-to-br from-slate-800/90 to-teal-900/90 rounded-3xl p-8 sm:p-12 border-2 border-yellow-400/30 max-w-lg w-full shadow-2xl relative">
+              <button
+                className="absolute top-4 right-4 text-cyan-400 hover:text-yellow-400 text-xl font-bold"
+                onClick={() => { setShowPayment(null); setDepositData(null); }}
+                aria-label="Close"
+              >
+                ×
+              </button>
+              {!depositData ? (
+                <DepositForm onSubmit={data => setDepositData(data)} />
+              ) : (
+                <div className="text-center">
+                  <h2 className="text-2xl font-bold text-yellow-400 mb-4">Proceed to Deposit</h2>
+                  <p className="text-cyan-200 mb-6">Name: <span className="font-bold text-white">{depositData.name}</span></p>
+                  <p className="text-cyan-200 mb-6">Username: <span className="font-bold text-white">{depositData.username}</span></p>
+                  <p className="text-cyan-200 mb-8">Amount: <span className="font-bold text-white">${depositData.amount}</span></p>
+                  <div className="bg-slate-900/70 rounded-xl p-6 border border-cyan-400/30 mb-4">
+                    <p className="text-yellow-400 font-bold mb-2">Stripe Crypto Onramp</p>
+                    <p className="text-cyan-200 text-sm mb-2">Complete your deposit securely below:</p>
+                    {clientSecret ? (
+                      <StripeOnrampWidget clientSecret={clientSecret} />
+                    ) : (
+                      <p className="text-cyan-400">Loading Stripe Onramp...</p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         )}
       </div>
     </Router>

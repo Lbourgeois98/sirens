@@ -51,6 +51,7 @@ export const PaymentsPage: React.FC<PaymentsPageProps> = ({ onShowPayment }) => 
                   <li>• Maximum: $500</li>
                   <li>• Instant processing</li>
                   <li>• 50% signup bonus</li>
+                  <li>• Deposit via Stripe Crypto Onramp or Coinbase Onramp</li>
                 </ul>
               </div>
               

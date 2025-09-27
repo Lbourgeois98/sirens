@@ -22,23 +22,15 @@ export const PaymentsSection: React.FC<PaymentsSectionProps> = ({ onShowPayment 
           
           <div className="bg-slate-900/50 rounded-2xl p-6 sm:p-8 border border-cyan-400/20 mb-8">
             <div className="text-center">
-              <h3 className="text-xl sm:text-2xl font-bold text-white mb-6">Payment Methods Accepted</h3>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-cyan-200 mb-8">
-                <div className="bg-teal-800/50 rounded-lg p-4">
-                  <Coins className="w-6 h-6 sm:w-8 sm:h-8 text-yellow-400 mx-auto mb-2" />
-                  <span className="text-sm font-medium">Crypto</span>
-                </div>
-                <div className="bg-teal-800/50 rounded-lg p-4">
-                  <Shield className="w-6 h-6 sm:w-8 sm:h-8 text-yellow-400 mx-auto mb-2" />
-                  <span className="text-sm font-medium">Bank Transfer</span>
-                </div>
-                <div className="bg-teal-800/50 rounded-lg p-4">
-                  <Star className="w-6 h-6 sm:w-8 sm:h-8 text-yellow-400 mx-auto mb-2" />
-                  <span className="text-sm font-medium">Digital Wallet</span>
-                </div>
+              <h3 className="text-xl sm:text-2xl font-bold text-white mb-6">Deposit Methods</h3>
+              <div className="grid grid-cols-2 gap-4 text-cyan-200 mb-8">
                 <div className="bg-teal-800/50 rounded-lg p-4">
                   <CreditCard className="w-6 h-6 sm:w-8 sm:h-8 text-yellow-400 mx-auto mb-2" />
-                  <span className="text-sm font-medium">Credit Cards</span>
+                  <span className="text-sm font-medium">Stripe Crypto Onramp</span>
+                </div>
+                <div className="bg-teal-800/50 rounded-lg p-4">
+                  <Coins className="w-6 h-6 sm:w-8 sm:h-8 text-yellow-400 mx-auto mb-2" />
+                  <span className="text-sm font-medium">Coinbase Onramp</span>
                 </div>
               </div>
               

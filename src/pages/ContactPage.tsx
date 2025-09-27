@@ -137,7 +137,7 @@ export const ContactPage: React.FC = () => {
               </div>
               <div>
                 <h3 className="font-bold text-white mb-2">What payment methods do you accept?</h3>
-                <p className="text-cyan-200 text-sm">We accept credit cards, cryptocurrency, bank transfers, and Helio Pay through our secure payment system.</p>
+                <p className="text-cyan-200 text-sm">We accept deposits via Stripe Crypto Onramp and Coinbase Onramp for secure payments.</p>
               </div>
               <div>
                 <h3 className="font-bold text-white mb-2">Can I refer friends?</h3>
