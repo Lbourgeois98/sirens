@@ -1,412 +1,404 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import Header from './components/Header';
-import Hero from './components/Hero';
-import ProductGrid from './components/ProductGrid';
-import CartSidebar from './components/CartSidebar';
-import Footer from './components/Footer';
-import InfoPage from './components/InfoPage';
-import ShopifyIntegration from './components/ShopifyIntegration';
-import { useCart } from './hooks/useCart';
-import { useShopifyProducts } from './hooks/useShopify';
-import { products, debugImagePaths } from './data/products';
-import { debugProductImages } from './utils/imageUtils';
-import { Product } from './types';
-import { shopifyService } from './services/shopify';
+import React, { useState, useEffect } from 'react';
+import { Zap, CreditCard, Loader2, CheckCircle, AlertCircle, QrCode, ExternalLink, Copy, RefreshCw } from 'lucide-react';
+import { CartItem } from '../types';
+import { useSpeedCheckout, CustomerInfo, ShippingInfo } from '../hooks/useSpeedCheckout';
+import { speedCheckoutService, SpeedQRCodeData } from '../services/speedCheckout';
 
-function App() {
-  const cart = useCart();
-  const [currentView, setCurrentView] = useState('home');
-  const [currentInfoPage, setCurrentInfoPage] = useState<string | null>(null);
-  
-  // Shopify integration
-  const { products: shopifyProducts, loading: shopifyLoading, error: shopifyError } = useShopifyProducts();
-  const isShopifyConfigured = shopifyService.isConfigured();
+interface SpeedCheckoutButtonProps {
+  cartItems: CartItem[];
+  totalAmount: number;
+  onSuccess?: (response: any) => void;
+  onError?: (error: string) => void;
+  disabled?: boolean;
+  className?: string;
+}
 
-  // Debug images in development
+const SpeedCheckoutButton: React.FC<SpeedCheckoutButtonProps> = ({
+  cartItems,
+  totalAmount,
+  onSuccess,
+  onError,
+  disabled = false,
+  className = ''
+}) => {
+  const { 
+    checkoutState, 
+    isSpeedReady, 
+    processCheckout, 
+    resetCheckout,
+    getSpeedStatus,
+    convertCartItems
+  } = useSpeedCheckout();
+
+  const [showQRCode, setShowQRCode] = useState(false);
+  const [qrCodeData, setQRCodeData] = useState<SpeedQRCodeData | null>(null);
+  const [paymentStatus, setPaymentStatus] = useState<'pending' | 'checking' | 'completed' | 'failed'>('pending');
+  const [statusCheckInterval, setStatusCheckInterval] = useState<NodeJS.Timeout | null>(null);
+  const [timeRemaining, setTimeRemaining] = useState<number>(0);
+
+  // Cleanup intervals on unmount
   useEffect(() => {
-    if (import.meta.env.DEV) {
-      debugImagePaths();
-      debugProductImages(products);
+    return () => {
+      if (statusCheckInterval) {
+        clearInterval(statusCheckInterval);
+      }
+    };
+  }, [statusCheckInterval]);
+
+  // Timer for QR code expiration
+  useEffect(() => {
+    if (qrCodeData && timeRemaining > 0) {
+      const timer = setTimeout(() => {
+        setTimeRemaining(prev => prev - 1);
+      }, 1000);
+      return () => clearTimeout(timer);
+    } else if (timeRemaining === 0 && qrCodeData) {
+      // QR code expired
+      handleCloseQRCode();
     }
-  }, []);
+  }, [timeRemaining, qrCodeData]);
 
-  // Add visual feedback for cart additions and checkout events
-  useEffect(() => {
-    const handleCartItemAdded = (event: CustomEvent) => {
-      // Create floating notification
+  const handleGenerateQRCode = async () => {
+    try {
+      if (!speedCheckoutService.isConfigured()) {
+        onError?.('Strike Lightning payment is not configured');
+        return;
+      }
+
+      if (cartItems.length === 0) {
+        onError?.('Cart is empty');
+        return;
+      }
+
+      // Validate total amount matches cart calculation
+      const calculatedTotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+      if (Math.abs(calculatedTotal - totalAmount) > 0.01) {
+        console.warn('Amount mismatch detected:', { calculatedTotal, totalAmount });
+      }
+
+      console.log('⚡ Starting Strike Lightning checkout process...', {
+        totalAmount: totalAmount,
+        itemCount: cartItems.length,
+        items: cartItems.map(item => ({ name: item.name, price: item.price, quantity: item.quantity }))
+      });
+
+      setShowQRCode(true);
+      setPaymentStatus('pending');
+
+      // Create Lightning invoice with exact cart amount
+      const checkoutData = {
+        amount: Number(totalAmount.toFixed(2)), // Ensure proper decimal handling
+        currency: 'USD',
+        items: convertCartItems(cartItems),
+        customer: {
+          email: 'customer@pokeshop.com',
+          firstName: 'Pokemon',
+          lastName: 'Trainer'
+        },
+        metadata: {
+          source: 'pokemon-ecommerce-lightning',
+          cartItemCount: cartItems.length,
+          timestamp: new Date().toISOString(),
+          cartTotal: totalAmount,
+          itemDetails: cartItems.map(item => `${item.name} x${item.quantity}`)
+        }
+      };
+
+      console.log('📦 Lightning invoice data being sent:', {
+        amount: checkoutData.amount,
+        currency: checkoutData.currency,
+        itemCount: checkoutData.items.length,
+        metadata: checkoutData.metadata
+      });
+
+      const qrData = await speedCheckoutService.createPaymentSession(checkoutData);
+      setQRCodeData(qrData);
+
+      // Calculate time remaining (15 minutes)
+      const expiresAt = new Date(qrData.expiresAt).getTime();
+      const now = new Date().getTime();
+      const remaining = Math.max(0, Math.floor((expiresAt - now) / 1000));
+      setTimeRemaining(remaining);
+
+      console.log('✅ Lightning QR Code generated successfully:', {
+        orderId: qrData.orderId,
+        amount: qrData.amount,
+        currency: qrData.currency,
+        expiresIn: `${Math.floor(remaining / 60)}:${(remaining % 60).toString().padStart(2, '0')}`
+      });
+
+      // Start checking payment status
+      startStatusChecking(qrData.orderId);
+
+    } catch (error) {
+      console.error('❌ Lightning QR Code generation error:', error);
+      onError?.(error instanceof Error ? error.message : 'Failed to generate Lightning invoice');
+      setShowQRCode(false);
+    }
+  };
+
+  const startStatusChecking = (orderId: string) => {
+    if (statusCheckInterval) {
+      clearInterval(statusCheckInterval);
+    }
+
+    console.log('🔄 Starting Lightning payment status monitoring for invoice:', orderId);
+
+    const interval = setInterval(async () => {
+      try {
+        setPaymentStatus('checking');
+        const status = await speedCheckoutService.checkPaymentStatus(orderId);
+        
+        if (status.success && status.status === 'completed') {
+          console.log('✅ Lightning payment completed successfully!', status);
+          setPaymentStatus('completed');
+          clearInterval(interval);
+          setStatusCheckInterval(null);
+          
+          // Notify success
+          onSuccess?.(status);
+          
+          // Close QR code modal after success
+          setTimeout(() => {
+            handleCloseQRCode();
+          }, 3000);
+          
+        } else if (status.status === 'failed') {
+          console.log('❌ Lightning payment failed', status);
+          setPaymentStatus('failed');
+          clearInterval(interval);
+          setStatusCheckInterval(null);
+          onError?.(status.error?.message || 'Lightning payment failed');
+        } else {
+          console.log('⏳ Lightning payment still pending...', status);
+          setPaymentStatus('pending');
+        }
+      } catch (error) {
+        console.error('❌ Lightning status check error:', error);
+        setPaymentStatus('pending');
+      }
+    }, 3000); // Check every 3 seconds
+
+    setStatusCheckInterval(interval);
+  };
+
+  const handleCloseQRCode = () => {
+    console.log('🔒 Closing Lightning QR code modal');
+    setShowQRCode(false);
+    setQRCodeData(null);
+    setPaymentStatus('pending');
+    setTimeRemaining(0);
+    
+    if (statusCheckInterval) {
+      clearInterval(statusCheckInterval);
+      setStatusCheckInterval(null);
+    }
+  };
+
+  const handleCopyPaymentUrl = () => {
+    if (qrCodeData?.paymentUrl) {
+      navigator.clipboard.writeText(qrCodeData.paymentUrl);
+      
+      // Show copied notification
       const notification = document.createElement('div');
       notification.className = 'fixed top-20 right-4 bg-pokemon-yellow text-black px-4 py-2 rounded-full comic-border comic-text font-bold z-50 animate-bounce-in';
-      notification.textContent = 'Added to cart!';
+      notification.textContent = 'Lightning invoice copied!';
       document.body.appendChild(notification);
       
       setTimeout(() => {
         notification.remove();
       }, 2000);
-    };
-
-    const handleCheckoutSuccess = (event: CustomEvent) => {
-      const { provider, transactionId, amount } = event.detail;
-      
-      // Create success notification
-      const notification = document.createElement('div');
-      notification.className = 'fixed top-20 right-4 bg-green-500 text-white px-6 py-3 rounded-lg comic-border comic-text font-bold z-50 animate-bounce-in';
-      notification.innerHTML = `
-        <div class="text-center">
-          <div class="text-lg">✅ Payment Successful!</div>
-          <div class="text-sm mt-1">via ${provider.toUpperCase()}</div>
-          ${amount ? `<div class="text-xs mt-1">$${amount}</div>` : ''}
-        </div>
-      `;
-      document.body.appendChild(notification);
-      
-      setTimeout(() => {
-        notification.remove();
-      }, 5000);
-
-      // Clear cart after successful checkout
-      cart.clearCart();
-    };
-
-    const handleCheckoutError = (event: CustomEvent) => {
-      const { provider, error } = event.detail;
-      
-      // Create error notification
-      const notification = document.createElement('div');
-      notification.className = 'fixed top-20 right-4 bg-red-500 text-white px-6 py-3 rounded-lg comic-border comic-text font-bold z-50 animate-bounce-in';
-      notification.innerHTML = `
-        <div class="text-center">
-          <div class="text-lg">❌ Payment Failed</div>
-          <div class="text-sm mt-1">via ${provider.toUpperCase()}</div>
-          <div class="text-xs mt-1">${error}</div>
-        </div>
-      `;
-      document.body.appendChild(notification);
-      
-      setTimeout(() => {
-        notification.remove();
-      }, 4000);
-    };
-
-    window.addEventListener('cartItemAdded', handleCartItemAdded as EventListener);
-    window.addEventListener('checkoutSuccess', handleCheckoutSuccess as EventListener);
-    window.addEventListener('checkoutError', handleCheckoutError as EventListener);
-    
-    return () => {
-      window.removeEventListener('cartItemAdded', handleCartItemAdded as EventListener);
-      window.removeEventListener('checkoutSuccess', handleCheckoutSuccess as EventListener);
-      window.removeEventListener('checkoutError', handleCheckoutError as EventListener);
-    };
-  }, [cart]);
-
-  // Scroll to top when view changes
-  useEffect(() => {
-    if (currentView !== 'home') {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-  }, [currentView]);
-
-  // Use Shopify products if available, otherwise fall back to local products
-  const activeProducts = useMemo(() => {
-    if (isShopifyConfigured && shopifyProducts.length > 0) {
-      // Transform Shopify products to our format
-      return shopifyProducts.map(shopifyProduct => ({
-        id: shopifyProduct.id,
-        name: shopifyProduct.title,
-        price: parseFloat(shopifyProduct.variants[0]?.price.amount || '0'),
-        image: shopifyProduct.images[0]?.src || '/placeholder-pokemon.jpg',
-        description: shopifyProduct.description,
-        console: 'Nintendo Switch',
-        generation: parseInt(shopifyProduct.tags.find(tag => tag.startsWith('gen-'))?.replace('gen-', '') || '8'),
-        releaseDate: shopifyProduct.createdAt,
-        category: shopifyProduct.tags.includes('new') ? 'new' as const : 'popular' as const,
-        inStock: shopifyProduct.variants[0]?.available || false,
-        rating: 4.5, // Default rating
-        features: shopifyProduct.tags.filter(tag => !tag.startsWith('gen-')),
-        priceCategory: `$${Math.floor(parseFloat(shopifyProduct.variants[0]?.price.amount || '0') / 10) * 10}-$${Math.floor(parseFloat(shopifyProduct.variants[0]?.price.amount || '0') / 10) * 10 + 10}`
-      }));
-    }
-    return products;
-  }, [isShopifyConfigured, shopifyProducts]);
-
-  // Filter and sort products based on current view
-  const filteredProducts = useMemo(() => {
-    let filtered = [...activeProducts];
-
-    // Apply view-specific filtering
-    switch (currentView) {
-      case 'new':
-        filtered = filtered.filter(p => p.category === 'new');
-        break;
-      case 'popular':
-        filtered = filtered.filter(p => p.category === 'popular');
-        break;
-      case 'gen4':
-        filtered = filtered.filter(p => p.generation === 4);
-        break;
-      case 'gen7':
-        filtered = filtered.filter(p => p.generation === 7);
-        break;
-      case 'gen8':
-        filtered = filtered.filter(p => p.generation === 8);
-        break;
-      case 'gen9':
-        filtered = filtered.filter(p => p.generation === 9);
-        break;
-      default:
-        // 'all' or 'home' - show all products
-        break;
-    }
-
-    // Sort by price (lowest to highest)
-    return filtered.sort((a, b) => a.price - b.price);
-  }, [currentView, activeProducts]);
-
-  // Organize all products by category, sorted by price
-  const organizedProducts = useMemo(() => {
-    const allSorted = [...activeProducts].sort((a, b) => a.price - b.price);
-    
-    return {
-      all: allSorted,
-      new: allSorted.filter(p => p.category === 'new'),
-      popular: allSorted.filter(p => p.category === 'popular'),
-      gen4: allSorted.filter(p => p.generation === 4),
-      gen7: allSorted.filter(p => p.generation === 7),
-      gen8: allSorted.filter(p => p.generation === 8),
-      gen9: allSorted.filter(p => p.generation === 9)
-    };
-  }, [activeProducts]);
-
-  const handleNavigate = (category: string) => {
-    setCurrentView(category);
-    setCurrentInfoPage(null);
-    // Scroll to top when navigating
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const handleInfoPageNavigate = (page: string) => {
-    setCurrentInfoPage(page);
-    setCurrentView('info');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const handleBackToHome = () => {
-    setCurrentView('home');
-    setCurrentInfoPage(null);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const handleShopNow = () => {
-    setCurrentView('all');
-    const productsSection = document.getElementById('products-section');
-    if (productsSection) {
-      productsSection.scrollIntoView({ behavior: 'smooth' });
     }
   };
 
-  const handleViewGames = () => {
-    setCurrentView('all');
-    const productsSection = document.getElementById('products-section');
-    if (productsSection) {
-      productsSection.scrollIntoView({ behavior: 'smooth' });
-    }
+  const formatTime = (seconds: number): string => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
 
-  const handleAddToCart = (product: Product) => {
-    cart.addToCart(product, 1);
-  };
+  const speedStatus = getSpeedStatus();
 
-  const getPageTitle = () => {
-    const source = isShopifyConfigured && shopifyProducts.length > 0 ? 'Shopify' : 'Local';
-    switch (currentView) {
-      case 'new':
-        return `NEW POKEMON GAMES (${filteredProducts.length} games) - ${source}`;
-      case 'popular':
-        return `POPULAR POKEMON GAMES (${filteredProducts.length} games) - ${source}`;
-      case 'gen4':
-        return `GENERATION 4 GAMES (${filteredProducts.length} games) - ${source}`;
-      case 'gen7':
-        return `GENERATION 7 GAMES (${filteredProducts.length} games) - ${source}`;
-      case 'gen8':
-        return `GENERATION 8 GAMES (${filteredProducts.length} games) - ${source}`;
-      case 'gen9':
-        return `GENERATION 9 GAMES (${filteredProducts.length} games) - ${source}`;
-      case 'all':
-        return `ALL POKEMON GAMES (${filteredProducts.length} games) - ${source}`;
-      default:
-        return `ALL POKEMON GAMES (${activeProducts.length} games) - ${source}`;
-    }
-  };
-
-  // If we're on an info page, show that instead
-  if (currentView === 'info' && currentInfoPage) {
+  // Show configuration error if Strike is not configured
+  if (!speedStatus.configured) {
     return (
-      <div className="min-h-screen relative overflow-x-hidden">
-        {/* Animated Background */}
-        <div 
-          className="fixed inset-0 w-full h-full bg-cover bg-center bg-no-repeat animate-background-drift"
-          style={{
-            backgroundImage: `url('/background.png')`,
-            backgroundSize: '120%',
-            animation: 'background-drift 30s ease-in-out infinite'
-          }}
-        />
-        
-        {/* Background Overlay */}
-        <div className="fixed inset-0 bg-black bg-opacity-40 backdrop-blur-[1px]" />
-
-        {/* Header */}
-        <Header 
-          onCartToggle={cart.toggleCart}
-          cartItemCount={cart.totalItems}
-          onNavigate={handleNavigate}
-        />
-
-        {/* Info Page Content */}
-        <InfoPage 
-          page={currentInfoPage} 
-          onBackToHome={handleBackToHome}
-        />
-
-        {/* Cart Sidebar */}
-        <CartSidebar
-          isOpen={cart.isOpen}
-          onClose={() => cart.setIsOpen(false)}
-          cartItems={cart.cartItems}
-          totalPrice={cart.totalPrice}
-          onUpdateQuantity={cart.updateQuantity}
-          onRemoveItem={cart.removeFromCart}
-        />
+      <div className="mystical-bg rounded-lg p-4 text-center underwater-border">
+        <AlertCircle className="w-6 h-6 mx-auto mb-2 text-sirens-coral" />
+        <p className="mystical-text text-sm text-sirens-coral font-bold">Strike Lightning Not Configured</p>
+        <p className="elegant-text text-xs text-sirens-pearl mt-1">
+          Set VITE_STRIKE_API_KEY in your environment
+        </p>
+        <div className="mt-2 text-xs text-sirens-pearl">
+          <div>API Key: {speedStatus.apiKey ? '✅' : '❌'}</div>
+          <div>Provider: Strike Lightning Network</div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen relative overflow-x-hidden">
-      {/* Animated Background */}
-      <div 
-        className="fixed inset-0 w-full h-full bg-cover bg-center bg-no-repeat deep-sea-drift"
-        style={{
-          backgroundImage: `url('/208170b9-96e8-46fd-a823-dae9e04a4291.jpeg')`,
-          backgroundSize: '110%'
-        }}
-      />
-      
-      {/* Background Overlay */}
-      <div className="fixed inset-0 bg-gradient-to-b from-sirens-navy/60 via-sirens-deep/50 to-sirens-ocean/60 backdrop-blur-[2px]" />
-
-      {/* Floating Bubbles */}
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="bubble"></div>
-        <div className="bubble"></div>
-        <div className="bubble"></div>
-        <div className="bubble"></div>
-        <div className="bubble"></div>
-        <div className="bubble"></div>
-        
-        {/* Mystical Particles */}
-        <div className="absolute top-20 left-10 w-4 h-4 bg-sirens-teal rounded-full magical-particles opacity-60"></div>
-        <div className="absolute top-40 right-20 w-3 h-3 bg-sirens-gold rounded-full magical-particles opacity-70 delay-1000"></div>
-        <div className="absolute bottom-40 left-1/4 w-5 h-5 bg-sirens-purple rounded-full magical-particles opacity-50 delay-2000"></div>
-        <div className="absolute top-60 right-1/3 w-2 h-2 bg-sirens-pearl rounded-full magical-particles opacity-80 delay-1500"></div>
-        <div className="absolute bottom-20 right-10 w-6 h-6 border-2 border-sirens-coral rounded-full magical-particles opacity-60 delay-500"></div>
-        <div className="absolute top-1/3 left-1/2 w-3 h-3 bg-sirens-teal rounded-full magical-particles opacity-65 delay-800"></div>
+    <div className="space-y-4">
+      {/* Strike Lightning Status */}
+      <div className="mystical-bg rounded-lg p-3 underwater-border">
+        <div className="flex items-center gap-2 mb-2">
+          <CheckCircle className="w-4 h-4 text-sirens-teal mystical-glow" />
+          <span className="mystical-text text-sm text-sirens-teal font-bold">Strike Lightning Ready</span>
+        </div>
+        <div className="text-xs text-sirens-pearl space-y-1">
+          <div>✅ API Key: {speedStatus.apiKey ? 'Configured' : 'Missing'}</div>
+          <div>⚡ Provider: Strike Lightning Network</div>
+          <div>✅ Cart Total: ${totalAmount.toFixed(2)} ({cartItems.length} items)</div>
+          <div>✅ Items: {cartItems.map(item => `${item.name} x${item.quantity}`).join(', ')}</div>
+        </div>
       </div>
 
-      {/* Header */}
-      <Header 
-        onCartToggle={cart.toggleCart}
-        cartItemCount={cart.totalItems}
-        onNavigate={handleNavigate}
-      />
+      {/* Lightning QR Code Checkout Button */}
+      <button
+        onClick={handleGenerateQRCode}
+        disabled={disabled || !speedStatus.configured || cartItems.length === 0}
+        className={`w-full bg-gradient-to-r from-sirens-gold to-sirens-coral hover:from-sirens-coral hover:to-sirens-gold 
+                   text-sirens-navy font-bold py-4 px-6 rounded-full underwater-border mystical-text text-lg 
+                   transform hover:scale-105 transition-all duration-300 treasure-shadow mystical-glow
+                   flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed
+                   ${className}`}
+      >
+        <Zap className="w-6 h-6" />
+        ⚡ LIGHTNING PAY - ${totalAmount.toFixed(2)}
+      </button>
 
-      {/* Hero Section - Only show on home view */}
-      {currentView === 'home' && (
-        <>
-          <Hero 
-            onShopNow={handleShopNow}
-            onViewGames={handleViewGames}
-          />
-          
-          {/* Shopify Integration Status */}
-          <div className="container mx-auto px-4 py-8 relative z-10">
-            <ShopifyIntegration />
-          </div>
-        </>
-      )}
+      {/* Lightning QR Code Modal */}
+      {showQRCode && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center p-4">
+          <div className="mystical-bg rounded-2xl underwater-border border-4 border-sirens-gold p-6 max-w-md w-full treasure-shadow">
+            {/* Header */}
+            <div className="text-center mb-4">
+              <h3 className="fantasy-font text-2xl text-sirens-gold mb-2 mystical-glow">⚡ Lightning Payment</h3>
+              <p className="mystical-text text-sirens-pearl font-bold text-xl">
+                Pay ${totalAmount.toFixed(2)} USD
+              </p>
+              <p className="elegant-text text-sm text-sirens-pearl mt-1">
+                {cartItems.length} Pokemon game{cartItems.length !== 1 ? 's' : ''}
+              </p>
+              {timeRemaining > 0 && (
+                <p className="mystical-text text-sm text-sirens-gold mt-2 font-bold mystical-glow">
+                  ⏰ Expires in: {formatTime(timeRemaining)}
+                </p>
+              )}
+            </div>
 
-      {/* Main Content - Only show games when NOT on home page */}
-      {currentView !== 'home' && (
-        <main id="products-section" className="container mx-auto px-4 py-4 relative z-10">
-          {/* Shopify Loading State */}
-          {shopifyLoading && isShopifyConfigured && (
-            <div className="text-center py-8">
-              <div className="speech-bubble inline-block bg-opacity-90 backdrop-blur-sm">
-                <div className="flex items-center gap-3">
-                  <div className="animate-spin w-6 h-6 border-2 border-pokemon-yellow border-t-transparent rounded-full"></div>
-                  <p className="comic-text text-lg text-white">Loading products from Shopify...</p>
+            {/* QR Code Display */}
+            {qrCodeData ? (
+              <div className="text-center space-y-4">
+                {/* QR Code */}
+                <div className="bg-sirens-pearl p-4 rounded-lg mx-auto inline-block underwater-border">
+                  <img 
+                    src={qrCodeData.qrCode} 
+                    alt="Lightning Payment QR Code"
+                    className="w-48 h-48 mx-auto"
+                  />
+                </div>
+
+                {/* Payment Status */}
+                <div className="space-y-2">
+                  {paymentStatus === 'pending' && (
+                    <div className="flex items-center justify-center gap-2 text-sirens-gold">
+                      <Zap className="w-5 h-5 mystical-glow" />
+                      <span className="mystical-text font-bold">Scan to pay ${totalAmount.toFixed(2)} via Lightning</span>
+                    </div>
+                  )}
+                  
+                  {paymentStatus === 'checking' && (
+                    <div className="flex items-center justify-center gap-2 text-sirens-teal">
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <span className="mystical-text">Checking Lightning payment...</span>
+                    </div>
+                  )}
+                  
+                  {paymentStatus === 'completed' && (
+                    <div className="flex items-center justify-center gap-2 text-sirens-teal">
+                      <CheckCircle className="w-5 h-5" />
+                      <span className="mystical-text font-bold">Lightning payment of ${totalAmount.toFixed(2)} successful!</span>
+                    </div>
+                  )}
+                  
+                  {paymentStatus === 'failed' && (
+                    <div className="flex items-center justify-center gap-2 text-sirens-coral">
+                      <AlertCircle className="w-5 h-5" />
+                      <span className="mystical-text">Lightning payment failed - Try Again</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Action Buttons */}
+                <div className="space-y-2">
+                  <button
+                    onClick={handleCopyPaymentUrl}
+                    className="w-full bg-sirens-gold hover:bg-sirens-coral text-sirens-navy font-bold 
+                             py-2 px-4 rounded-lg underwater-border mystical-text 
+                             transform hover:scale-105 transition-all duration-300 
+                             flex items-center justify-center gap-2"
+                  >
+                    <Copy className="w-4 h-4" />
+                    Copy Lightning Invoice
+                  </button>
+
+                  <button
+                    onClick={() => window.open(qrCodeData.paymentUrl, '_blank')}
+                    className="w-full bg-sirens-teal hover:bg-sirens-purple text-sirens-pearl font-bold 
+                             py-2 px-4 rounded-lg underwater-border mystical-text 
+                             transform hover:scale-105 transition-all duration-300 
+                             flex items-center justify-center gap-2"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    Open in Lightning Wallet
+                  </button>
+                </div>
+
+                {/* Order Info */}
+                <div className="mystical-bg rounded-lg p-3 text-left underwater-border">
+                  <div className="text-xs text-sirens-pearl space-y-1">
+                    <div className="font-bold text-sirens-gold">Lightning Invoice Details:</div>
+                    <div>Invoice ID: {qrCodeData.orderId}</div>
+                    <div>Amount: ${qrCodeData.amount.toFixed(2)} {qrCodeData.currency}</div>
+                    <div>Items: {cartItems.length} Pokemon games</div>
+                    <div className="mt-2">
+                      {cartItems.map((item, index) => (
+                        <div key={index} className="text-xs">
+                          • {item.name} x{item.quantity} = ${(item.price * item.quantity).toFixed(2)}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
-
-          {/* Shopify Error State */}
-          {shopifyError && isShopifyConfigured && (
-            <div className="text-center py-8">
-              <div className="speech-bubble inline-block bg-opacity-90 backdrop-blur-sm">
-                <p className="comic-text text-lg text-red-400 font-bold mb-2">Shopify Error</p>
-                <p className="comic-text text-white">{shopifyError}</p>
-                <p className="comic-text text-gray-300 text-sm mt-2">Showing local products instead</p>
+            ) : (
+              <div className="text-center py-8">
+                <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-orange-400" />
+                <p className="comic-text text-white">Generating Lightning invoice for ${totalAmount.toFixed(2)}...</p>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Show single grid for "All Games" page, single category for filtered */}
-          <ProductGrid
-            products={currentView === 'all' ? organizedProducts.all : filteredProducts}
-            title={currentView === 'all' ? `ALL POKEMON GAMES (${organizedProducts.all.length} games)` : getPageTitle()}
-            onAddToCart={handleAddToCart}
-          />
-
-          {/* Show message if no products found */}
-          {currentView !== 'all' && filteredProducts.length === 0 && !shopifyLoading && (
-            <div className="text-center py-16">
-              <div className="speech-bubble inline-block epic-entrance bg-opacity-90 backdrop-blur-sm">
-                <h3 className="comic-font text-3xl text-pokemon-red mb-4">
-                  No Pokemon Games Found!
-                </h3>
-                <p className="comic-text text-lg text-white mb-4">
-                  Try selecting a different category to find more games.
-                </p>
-                <button
-                  onClick={() => {
-                    setCurrentView('all');
-                  }}
-                  className="bg-pokemon-yellow hover:bg-yellow-400 text-black font-bold 
-                           py-3 px-6 rounded-full comic-border comic-text text-lg 
-                           transform hover:scale-105 transition-all duration-300 comic-button"
-                >
-                  Reset & Show All Games
-                </button>
-              </div>
-            </div>
-          )}
-        </main>
+            {/* Close Button */}
+            <button
+              onClick={handleCloseQRCode}
+              className="w-full mt-4 bg-gray-600 hover:bg-gray-500 text-white font-bold 
+                       py-2 px-4 rounded-lg comic-border comic-text 
+                       transform hover:scale-105 transition-all duration-300"
+            >
+              Close
+            </button>
+          </div>
+        </div>
       )}
 
-      {/* Footer */}
-      <Footer onNavigate={handleInfoPageNavigate} />
-
-      {/* Cart Sidebar */}
-      <CartSidebar
-        isOpen={cart.isOpen}
-        onClose={() => cart.setIsOpen(false)}
-        cartItems={cart.cartItems}
-        totalPrice={cart.totalPrice}
-        onUpdateQuantity={cart.updateQuantity}
-        onRemoveItem={cart.removeFromCart}
-      />
+      {/* Strike Lightning Info */}
+      <div className="text-center">
+        <p className="comic-text text-xs text-gray-400">
+          ⚡ Powered by Strike • Bitcoin Lightning Network • Instant Payments
+        </p>
+      </div>
     </div>
   );
-}
+};
 
-export default App;
+export default SpeedCheckoutButton;
