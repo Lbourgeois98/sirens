@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ShoppingCart, Star, Monitor, Sparkles } from 'lucide-react';
+import { ShoppingCart, Star, Monitor, Sparkles, Crown } from 'lucide-react';
 import { Product } from '../types';
 
 interface ProductCardProps {
@@ -51,17 +51,17 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onAddToCart }) => {
   };
 
   const getRarityColor = () => {
-    if (product.rating >= 4.7) return 'from-yellow-400 to-orange-500'; // Legendary
-    if (product.rating >= 4.5) return 'from-purple-400 to-pink-500'; // Epic
-    if (product.rating >= 4.2) return 'from-blue-400 to-cyan-500'; // Rare
-    return 'from-gray-400 to-gray-600'; // Common
+    if (product.rating >= 4.7) return 'from-sirens-gold to-sirens-coral'; // Legendary
+    if (product.rating >= 4.5) return 'from-sirens-purple to-sirens-teal'; // Epic
+    if (product.rating >= 4.2) return 'from-sirens-teal to-sirens-purple'; // Rare
+    return 'from-sirens-deep to-sirens-ocean'; // Common
   };
 
   const getRarityBorder = () => {
-    if (product.rating >= 4.7) return 'border-yellow-400 shadow-yellow-400/50';
-    if (product.rating >= 4.5) return 'border-purple-400 shadow-purple-400/50';
-    if (product.rating >= 4.2) return 'border-blue-400 shadow-blue-400/50';
-    return 'border-gray-400 shadow-gray-400/50';
+    if (product.rating >= 4.7) return 'border-sirens-gold shadow-sirens-gold/50';
+    if (product.rating >= 4.5) return 'border-sirens-purple shadow-sirens-purple/50';
+    if (product.rating >= 4.2) return 'border-sirens-teal shadow-sirens-teal/50';
+    return 'border-sirens-deep shadow-sirens-deep/50';
   };
 
   const getRarityName = () => {
@@ -73,7 +73,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onAddToCart }) => {
 
   return (
     <div 
-      className={`pokemon-card-mobile relative w-full perspective-1000 group
+      className={`mystical-card relative w-full perspective-1000 group underwater-float
                  ${isFlipped ? 'flipped' : ''}`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
@@ -86,29 +86,29 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onAddToCart }) => {
         <div className={`absolute inset-0 w-full h-full backface-hidden
                         bg-gradient-to-br ${getRarityColor()} p-0.5 md:p-1 rounded-lg md:rounded-2xl
                         ${getRarityBorder()} border-2 md:border-4 shadow-lg md:shadow-2xl
-                        transform transition-all duration-500 hover:scale-105 electric-spark
+                        transform transition-all duration-500 hover:scale-105 treasure-shimmer
                         ${isHovered ? 'shadow-xl md:shadow-2xl' : ''}`}>
           
           {/* Inner Card */}
-          <div className="w-full h-full bg-gray-900 bg-opacity-95 rounded-md md:rounded-xl overflow-hidden relative backdrop-blur-sm flex flex-col">
+          <div className="w-full h-full mystical-bg rounded-md md:rounded-xl overflow-hidden relative backdrop-blur-sm flex flex-col">
             
             {/* Holographic Effect */}
-            <div className={`absolute inset-0 bg-gradient-to-br from-transparent via-white/10 to-transparent
+            <div className={`absolute inset-0 bg-gradient-to-br from-transparent via-sirens-teal/20 to-transparent
                            opacity-0 transition-opacity duration-500 pointer-events-none
                            ${isHovered ? 'opacity-100' : ''}`} />
             
             {/* Rarity Badge - Smaller on mobile */}
             <div className={`absolute top-1 left-1 px-1 py-0.5 md:px-2 md:py-1 rounded-full text-xs md:text-xs font-bold 
-                           comic-text uppercase tracking-wide z-10
+                           mystical-text uppercase tracking-wide z-10
                            bg-gradient-to-r ${getRarityColor()} text-white
                            transform transition-all duration-300 hover:scale-110`}>
               <span className="hidden sm:inline">{getRarityName()}</span>
-              <span className="sm:hidden">★</span>
+              <span className="sm:hidden"><Crown className="w-3 h-3" /></span>
             </div>
 
             {/* Generation Badge - Smaller on mobile */}
-            <div className="absolute top-1 right-1 w-4 h-4 md:w-6 md:h-6 bg-pokemon-yellow rounded-full 
-                           flex items-center justify-center text-black font-bold text-xs z-10
+            <div className="absolute top-1 right-1 w-4 h-4 md:w-6 md:h-6 bg-sirens-gold rounded-full 
+                           flex items-center justify-center text-sirens-navy font-bold text-xs z-10
                            transform transition-all duration-300 hover:rotate-180">
               {product.generation}
             </div>
@@ -148,7 +148,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onAddToCart }) => {
               {/* Floating Sparkles - Hidden on very small screens */}
               <div className={`absolute top-1 right-1 transition-all duration-1000 hidden sm:block
                              ${isHovered ? 'animate-bounce' : ''}`}>
-                <Sparkles className="w-3 h-3 md:w-4 md:h-4 text-pokemon-yellow" />
+                <Sparkles className="w-3 h-3 md:w-4 md:h-4 text-sirens-gold mystical-glow" />
               </div>
               
               {/* Energy Lines */}
@@ -162,7 +162,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onAddToCart }) => {
             <div className="p-1.5 md:p-3 flex flex-col flex-grow justify-between min-h-0">
               {/* Title - Responsive text size */}
               <div className="mb-1 md:mb-2">
-                <h3 className={`comic-font text-xs sm:text-sm md:text-base text-pokemon-yellow leading-tight
+                <h3 className={`fantasy-font text-xs sm:text-sm md:text-base text-sirens-gold leading-tight
                              transition-all duration-300 line-clamp-2 min-h-[1.5rem] sm:min-h-[2rem] md:min-h-[2.5rem]
                              ${isHovered ? '' : ''}`}>
                   {product.name}
@@ -177,27 +177,27 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onAddToCart }) => {
                       key={i}
                       className={`w-2 h-2 md:w-3 md:h-3 transition-all duration-300 delay-${i * 100}
                         ${i < Math.floor(product.rating) 
-                          ? 'text-pokemon-yellow fill-current' 
-                          : 'text-gray-500'}
+                          ? 'text-sirens-gold fill-current mystical-glow' 
+                          : 'text-sirens-deep'}
                         ${isHovered ? 'animate-pulse' : ''}`}
                     />
                   ))}
-                  <span className="ml-1 text-xs comic-text font-bold text-gray-300 hidden sm:inline">
+                  <span className="ml-1 text-xs mystical-text font-bold text-sirens-pearl hidden sm:inline">
                     {product.rating}
                   </span>
                 </div>
                 
                 {/* Console Icon - Hidden on very small screens */}
                 <div className="hidden sm:flex items-center gap-1">
-                  <Monitor className="w-2 h-2 md:w-3 md:h-3 text-pokemon-blue" />
-                  <span className="comic-text text-xs text-gray-400 hidden md:inline">Switch</span>
+                  <Monitor className="w-2 h-2 md:w-3 md:h-3 text-sirens-teal" />
+                  <span className="mystical-text text-xs text-sirens-pearl hidden md:inline">Switch</span>
                 </div>
               </div>
 
               {/* Price Display - Responsive size */}
               <div className="text-center py-1 md:py-2 flex-shrink-0">
-                <span className={`comic-font text-lg sm:text-xl md:text-2xl text-pokemon-yellow 
-                               ${isHovered ? 'animate-pulse' : 'animate-pulse'}`}>
+                <span className={`fantasy-font text-lg sm:text-xl md:text-2xl text-sirens-gold 
+                               ${isHovered ? 'mystical-glow' : 'mystical-glow'}`}>
                   ${product.price}
                 </span>
               </div>
@@ -214,15 +214,15 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onAddToCart }) => {
                            transform hover:scale-105 comic-button relative overflow-hidden
                            flex items-center justify-center gap-1 md:gap-2 text-xs md:text-sm flex-shrink-0
                            ${product.inStock 
-                             ? 'bg-pokemon-red hover:bg-red-600 text-white comic-shadow' 
-                             : 'bg-gray-600 text-gray-400 cursor-not-allowed'}
-                           ${isHovered ? 'animate-bounce' : ''}`}
+                             ? 'enchanted-button text-sirens-navy treasure-shadow' 
+                             : 'bg-sirens-deep text-sirens-pearl cursor-not-allowed'}
+                           ${isHovered ? 'underwater-float' : ''}`}
               >
                 <ShoppingCart className="w-3 h-3 md:w-4 md:h-4 flex-shrink-0" />
-                <span className="comic-text font-bold whitespace-nowrap hidden sm:inline">
+                <span className="mystical-text font-bold whitespace-nowrap hidden sm:inline">
                   ADD TO CART
                 </span>
-                <span className="comic-text font-bold whitespace-nowrap sm:hidden">
+                <span className="mystical-text font-bold whitespace-nowrap sm:hidden">
                   ADD
                 </span>
               </button>
@@ -232,42 +232,42 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onAddToCart }) => {
 
         {/* Back of Card - Responsive content */}
         <div className={`absolute inset-0 w-full h-full backface-hidden rotate-y-180
-                        bg-gradient-to-br from-gray-800 to-gray-900 p-0.5 md:p-1 rounded-lg md:rounded-2xl
-                        border-2 md:border-4 border-pokemon-yellow shadow-lg md:shadow-2xl`}>
+                        mystical-bg p-0.5 md:p-1 rounded-lg md:rounded-2xl
+                        border-2 md:border-4 border-sirens-teal shadow-lg md:shadow-2xl`}>
           
-          <div className="w-full h-full bg-gray-800 bg-opacity-95 rounded-md md:rounded-xl p-2 md:p-4 overflow-y-auto backdrop-blur-sm">
+          <div className="w-full h-full mystical-bg rounded-md md:rounded-xl p-2 md:p-4 overflow-y-auto backdrop-blur-sm">
             <div className="space-y-2 md:space-y-3">
               {/* Back Header */}
-              <div className="text-center border-b border-pokemon-yellow pb-2 md:pb-3">
-                <h3 className="comic-font text-sm md:text-lg text-pokemon-yellow mb-1 line-clamp-2">
+              <div className="text-center border-b border-sirens-teal pb-2 md:pb-3">
+                <h3 className="fantasy-font text-sm md:text-lg text-sirens-gold mb-1 line-clamp-2">
                   {product.name}
                 </h3>
                 <div className="flex items-center justify-center gap-2 md:gap-3 text-xs">
-                  <span className="comic-text text-gray-300">
+                  <span className="mystical-text text-sirens-pearl">
                     {new Date(product.releaseDate).getFullYear()}
                   </span>
-                  <span className="comic-text text-gray-300">Gen {product.generation}</span>
+                  <span className="mystical-text text-sirens-pearl">Gen {product.generation}</span>
                 </div>
               </div>
 
               {/* Description - Truncated on mobile */}
               <div>
-                <h4 className="comic-text font-bold text-white mb-1 text-xs md:text-sm">Description:</h4>
-                <p className="comic-text text-gray-300 text-xs leading-relaxed line-clamp-2 md:line-clamp-3">
+                <h4 className="mystical-text font-bold text-sirens-pearl mb-1 text-xs md:text-sm">Description:</h4>
+                <p className="elegant-text text-sirens-pearl text-xs leading-relaxed line-clamp-2 md:line-clamp-3">
                   {product.description}
                 </p>
               </div>
 
               {/* Features - Fewer on mobile */}
               <div>
-                <h4 className="comic-text font-bold text-white mb-1 text-xs md:text-sm">Features:</h4>
+                <h4 className="mystical-text font-bold text-sirens-pearl mb-1 text-xs md:text-sm">Features:</h4>
                 <div className="space-y-1">
                   {product.features.slice(0, 2).map((feature, index) => (
                     <div
                       key={feature}
-                      className={`bg-gray-700 bg-opacity-80 text-gray-300 px-1.5 md:px-2 py-0.5 md:py-1 rounded-lg 
-                               text-xs comic-text transition-all duration-300
-                               delay-${index * 100} hover:bg-pokemon-yellow hover:text-black`}
+                      className={`mystical-bg text-sirens-pearl px-1.5 md:px-2 py-0.5 md:py-1 rounded-lg 
+                               text-xs mystical-text transition-all duration-300
+                               delay-${index * 100} hover:bg-sirens-teal hover:text-sirens-navy treasure-shimmer`}
                     >
                       {feature}
                     </div>
@@ -276,8 +276,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onAddToCart }) => {
               </div>
 
               {/* Click to flip back */}
-              <div className="text-center pt-1 md:pt-2 border-t border-gray-600">
-                <p className="comic-text text-xs text-gray-400">
+              <div className="text-center pt-1 md:pt-2 border-t border-sirens-deep">
+                <p className="mystical-text text-xs text-sirens-pearl">
                   Tap to flip
                 </p>
               </div>
