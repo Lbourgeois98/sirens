@@ -1,404 +1,85 @@
-import React, { useState, useEffect } from 'react';
-import { Zap, CreditCard, Loader2, CheckCircle, AlertCircle, QrCode, ExternalLink, Copy, RefreshCw } from 'lucide-react';
-import { CartItem } from '../types';
-import { useSpeedCheckout, CustomerInfo, ShippingInfo } from '../hooks/useSpeedCheckout';
-import { speedCheckoutService, SpeedQRCodeData } from '../services/speedCheckout';
+import React from 'react';
+import { Anchor, Waves, Fish, Crown } from 'lucide-react';
 
-interface SpeedCheckoutButtonProps {
-  cartItems: CartItem[];
-  totalAmount: number;
-  onSuccess?: (response: any) => void;
-  onError?: (error: string) => void;
-  disabled?: boolean;
-  className?: string;
-}
-
-const SpeedCheckoutButton: React.FC<SpeedCheckoutButtonProps> = ({
-  cartItems,
-  totalAmount,
-  onSuccess,
-  onError,
-  disabled = false,
-  className = ''
-}) => {
-  const { 
-    checkoutState, 
-    isSpeedReady, 
-    processCheckout, 
-    resetCheckout,
-    getSpeedStatus,
-    convertCartItems
-  } = useSpeedCheckout();
-
-  const [showQRCode, setShowQRCode] = useState(false);
-  const [qrCodeData, setQRCodeData] = useState<SpeedQRCodeData | null>(null);
-  const [paymentStatus, setPaymentStatus] = useState<'pending' | 'checking' | 'completed' | 'failed'>('pending');
-  const [statusCheckInterval, setStatusCheckInterval] = useState<NodeJS.Timeout | null>(null);
-  const [timeRemaining, setTimeRemaining] = useState<number>(0);
-
-  // Cleanup intervals on unmount
-  useEffect(() => {
-    return () => {
-      if (statusCheckInterval) {
-        clearInterval(statusCheckInterval);
-      }
-    };
-  }, [statusCheckInterval]);
-
-  // Timer for QR code expiration
-  useEffect(() => {
-    if (qrCodeData && timeRemaining > 0) {
-      const timer = setTimeout(() => {
-        setTimeRemaining(prev => prev - 1);
-      }, 1000);
-      return () => clearTimeout(timer);
-    } else if (timeRemaining === 0 && qrCodeData) {
-      // QR code expired
-      handleCloseQRCode();
-    }
-  }, [timeRemaining, qrCodeData]);
-
-  const handleGenerateQRCode = async () => {
-    try {
-      if (!speedCheckoutService.isConfigured()) {
-        onError?.('Strike Lightning payment is not configured');
-        return;
-      }
-
-      if (cartItems.length === 0) {
-        onError?.('Cart is empty');
-        return;
-      }
-
-      // Validate total amount matches cart calculation
-      const calculatedTotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-      if (Math.abs(calculatedTotal - totalAmount) > 0.01) {
-        console.warn('Amount mismatch detected:', { calculatedTotal, totalAmount });
-      }
-
-      console.log('⚡ Starting Strike Lightning checkout process...', {
-        totalAmount: totalAmount,
-        itemCount: cartItems.length,
-        items: cartItems.map(item => ({ name: item.name, price: item.price, quantity: item.quantity }))
-      });
-
-      setShowQRCode(true);
-      setPaymentStatus('pending');
-
-      // Create Lightning invoice with exact cart amount
-      const checkoutData = {
-        amount: Number(totalAmount.toFixed(2)), // Ensure proper decimal handling
-        currency: 'USD',
-        items: convertCartItems(cartItems),
-        customer: {
-          email: 'customer@pokeshop.com',
-          firstName: 'Pokemon',
-          lastName: 'Trainer'
-        },
-        metadata: {
-          source: 'pokemon-ecommerce-lightning',
-          cartItemCount: cartItems.length,
-          timestamp: new Date().toISOString(),
-          cartTotal: totalAmount,
-          itemDetails: cartItems.map(item => `${item.name} x${item.quantity}`)
-        }
-      };
-
-      console.log('📦 Lightning invoice data being sent:', {
-        amount: checkoutData.amount,
-        currency: checkoutData.currency,
-        itemCount: checkoutData.items.length,
-        metadata: checkoutData.metadata
-      });
-
-      const qrData = await speedCheckoutService.createPaymentSession(checkoutData);
-      setQRCodeData(qrData);
-
-      // Calculate time remaining (15 minutes)
-      const expiresAt = new Date(qrData.expiresAt).getTime();
-      const now = new Date().getTime();
-      const remaining = Math.max(0, Math.floor((expiresAt - now) / 1000));
-      setTimeRemaining(remaining);
-
-      console.log('✅ Lightning QR Code generated successfully:', {
-        orderId: qrData.orderId,
-        amount: qrData.amount,
-        currency: qrData.currency,
-        expiresIn: `${Math.floor(remaining / 60)}:${(remaining % 60).toString().padStart(2, '0')}`
-      });
-
-      // Start checking payment status
-      startStatusChecking(qrData.orderId);
-
-    } catch (error) {
-      console.error('❌ Lightning QR Code generation error:', error);
-      onError?.(error instanceof Error ? error.message : 'Failed to generate Lightning invoice');
-      setShowQRCode(false);
-    }
-  };
-
-  const startStatusChecking = (orderId: string) => {
-    if (statusCheckInterval) {
-      clearInterval(statusCheckInterval);
-    }
-
-    console.log('🔄 Starting Lightning payment status monitoring for invoice:', orderId);
-
-    const interval = setInterval(async () => {
-      try {
-        setPaymentStatus('checking');
-        const status = await speedCheckoutService.checkPaymentStatus(orderId);
-        
-        if (status.success && status.status === 'completed') {
-          console.log('✅ Lightning payment completed successfully!', status);
-          setPaymentStatus('completed');
-          clearInterval(interval);
-          setStatusCheckInterval(null);
-          
-          // Notify success
-          onSuccess?.(status);
-          
-          // Close QR code modal after success
-          setTimeout(() => {
-            handleCloseQRCode();
-          }, 3000);
-          
-        } else if (status.status === 'failed') {
-          console.log('❌ Lightning payment failed', status);
-          setPaymentStatus('failed');
-          clearInterval(interval);
-          setStatusCheckInterval(null);
-          onError?.(status.error?.message || 'Lightning payment failed');
-        } else {
-          console.log('⏳ Lightning payment still pending...', status);
-          setPaymentStatus('pending');
-        }
-      } catch (error) {
-        console.error('❌ Lightning status check error:', error);
-        setPaymentStatus('pending');
-      }
-    }, 3000); // Check every 3 seconds
-
-    setStatusCheckInterval(interval);
-  };
-
-  const handleCloseQRCode = () => {
-    console.log('🔒 Closing Lightning QR code modal');
-    setShowQRCode(false);
-    setQRCodeData(null);
-    setPaymentStatus('pending');
-    setTimeRemaining(0);
-    
-    if (statusCheckInterval) {
-      clearInterval(statusCheckInterval);
-      setStatusCheckInterval(null);
-    }
-  };
-
-  const handleCopyPaymentUrl = () => {
-    if (qrCodeData?.paymentUrl) {
-      navigator.clipboard.writeText(qrCodeData.paymentUrl);
-      
-      // Show copied notification
-      const notification = document.createElement('div');
-      notification.className = 'fixed top-20 right-4 bg-pokemon-yellow text-black px-4 py-2 rounded-full comic-border comic-text font-bold z-50 animate-bounce-in';
-      notification.textContent = 'Lightning invoice copied!';
-      document.body.appendChild(notification);
-      
-      setTimeout(() => {
-        notification.remove();
-      }, 2000);
-    }
-  };
-
-  const formatTime = (seconds: number): string => {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
-  };
-
-  const speedStatus = getSpeedStatus();
-
-  // Show configuration error if Strike is not configured
-  if (!speedStatus.configured) {
-    return (
-      <div className="mystical-bg rounded-lg p-4 text-center underwater-border">
-        <AlertCircle className="w-6 h-6 mx-auto mb-2 text-sirens-coral" />
-        <p className="mystical-text text-sm text-sirens-coral font-bold">Strike Lightning Not Configured</p>
-        <p className="elegant-text text-xs text-sirens-pearl mt-1">
-          Set VITE_STRIKE_API_KEY in your environment
-        </p>
-        <div className="mt-2 text-xs text-sirens-pearl">
-          <div>API Key: {speedStatus.apiKey ? '✅' : '❌'}</div>
-          <div>Provider: Strike Lightning Network</div>
-        </div>
-      </div>
-    );
-  }
-
+const Hero: React.FC = () => {
   return (
-    <div className="space-y-4">
-      {/* Strike Lightning Status */}
-      <div className="mystical-bg rounded-lg p-3 underwater-border">
-        <div className="flex items-center gap-2 mb-2">
-          <CheckCircle className="w-4 h-4 text-sirens-teal mystical-glow" />
-          <span className="mystical-text text-sm text-sirens-teal font-bold">Strike Lightning Ready</span>
+    <section className="relative py-12 md:py-20 overflow-hidden">
+      {/* Hero Content */}
+      <div className="container mx-auto px-4 text-center relative z-10">
+        {/* Main Logo Display */}
+        <div className="mb-8 enchanted-entrance">
+          <img 
+            src="/208170b9-96e8-46fd-a823-dae9e04a4291.jpeg" 
+            alt="Sirens Fortune"
+            className="w-32 h-32 md:w-48 md:h-48 mx-auto rounded-full underwater-border treasure-shadow mystical-glow"
+          />
         </div>
-        <div className="text-xs text-sirens-pearl space-y-1">
-          <div>✅ API Key: {speedStatus.apiKey ? 'Configured' : 'Missing'}</div>
-          <div>⚡ Provider: Strike Lightning Network</div>
-          <div>✅ Cart Total: ${totalAmount.toFixed(2)} ({cartItems.length} items)</div>
-          <div>✅ Items: {cartItems.map(item => `${item.name} x${item.quantity}`).join(', ')}</div>
+
+        {/* Main Heading */}
+        <div className="mb-8 enchanted-entrance">
+          <h1 className="fantasy-font text-4xl md:text-6xl lg:text-7xl text-sirens-gold mb-4 
+                       transform hover:scale-105 transition-transform duration-300 mystical-glow">
+            SIRENS FORTUNE
+          </h1>
+          <h2 className="fantasy-font text-2xl md:text-3xl lg:text-4xl text-sirens-teal mb-6 underwater-float">
+            Mystical Aquatic Gaming Collection
+          </h2>
+          <p className="elegant-text text-lg md:text-xl text-sirens-pearl max-w-3xl mx-auto leading-relaxed">
+            Dive into the depths of adventure with our enchanted collection of aquatic Nintendo Switch games. 
+            Discover underwater worlds, mystical sea creatures, and oceanic treasures that await brave explorers.
+          </p>
         </div>
-      </div>
 
-      {/* Lightning QR Code Checkout Button */}
-      <button
-        onClick={handleGenerateQRCode}
-        disabled={disabled || !speedStatus.configured || cartItems.length === 0}
-        className={`w-full bg-gradient-to-r from-sirens-gold to-sirens-coral hover:from-sirens-coral hover:to-sirens-gold 
-                   text-sirens-navy font-bold py-4 px-6 rounded-full underwater-border mystical-text text-lg 
-                   transform hover:scale-105 transition-all duration-300 treasure-shadow mystical-glow
-                   flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed
-                   ${className}`}
-      >
-        <Zap className="w-6 h-6" />
-        ⚡ LIGHTNING PAY - ${totalAmount.toFixed(2)}
-      </button>
-
-      {/* Lightning QR Code Modal */}
-      {showQRCode && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center p-4">
-          <div className="mystical-bg rounded-2xl underwater-border border-4 border-sirens-gold p-6 max-w-md w-full treasure-shadow">
-            {/* Header */}
-            <div className="text-center mb-4">
-              <h3 className="fantasy-font text-2xl text-sirens-gold mb-2 mystical-glow">⚡ Lightning Payment</h3>
-              <p className="mystical-text text-sirens-pearl font-bold text-xl">
-                Pay ${totalAmount.toFixed(2)} USD
-              </p>
-              <p className="elegant-text text-sm text-sirens-pearl mt-1">
-                {cartItems.length} Pokemon game{cartItems.length !== 1 ? 's' : ''}
-              </p>
-              {timeRemaining > 0 && (
-                <p className="mystical-text text-sm text-sirens-gold mt-2 font-bold mystical-glow">
-                  ⏰ Expires in: {formatTime(timeRemaining)}
-                </p>
-              )}
-            </div>
-
-            {/* QR Code Display */}
-            {qrCodeData ? (
-              <div className="text-center space-y-4">
-                {/* QR Code */}
-                <div className="bg-sirens-pearl p-4 rounded-lg mx-auto inline-block underwater-border">
-                  <img 
-                    src={qrCodeData.qrCode} 
-                    alt="Lightning Payment QR Code"
-                    className="w-48 h-48 mx-auto"
-                  />
-                </div>
-
-                {/* Payment Status */}
-                <div className="space-y-2">
-                  {paymentStatus === 'pending' && (
-                    <div className="flex items-center justify-center gap-2 text-sirens-gold">
-                      <Zap className="w-5 h-5 mystical-glow" />
-                      <span className="mystical-text font-bold">Scan to pay ${totalAmount.toFixed(2)} via Lightning</span>
-                    </div>
-                  )}
-                  
-                  {paymentStatus === 'checking' && (
-                    <div className="flex items-center justify-center gap-2 text-sirens-teal">
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      <span className="mystical-text">Checking Lightning payment...</span>
-                    </div>
-                  )}
-                  
-                  {paymentStatus === 'completed' && (
-                    <div className="flex items-center justify-center gap-2 text-sirens-teal">
-                      <CheckCircle className="w-5 h-5" />
-                      <span className="mystical-text font-bold">Lightning payment of ${totalAmount.toFixed(2)} successful!</span>
-                    </div>
-                  )}
-                  
-                  {paymentStatus === 'failed' && (
-                    <div className="flex items-center justify-center gap-2 text-sirens-coral">
-                      <AlertCircle className="w-5 h-5" />
-                      <span className="mystical-text">Lightning payment failed - Try Again</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Action Buttons */}
-                <div className="space-y-2">
-                  <button
-                    onClick={handleCopyPaymentUrl}
-                    className="w-full bg-sirens-gold hover:bg-sirens-coral text-sirens-navy font-bold 
-                             py-2 px-4 rounded-lg underwater-border mystical-text 
-                             transform hover:scale-105 transition-all duration-300 
-                             flex items-center justify-center gap-2"
-                  >
-                    <Copy className="w-4 h-4" />
-                    Copy Lightning Invoice
-                  </button>
-
-                  <button
-                    onClick={() => window.open(qrCodeData.paymentUrl, '_blank')}
-                    className="w-full bg-sirens-teal hover:bg-sirens-purple text-sirens-pearl font-bold 
-                             py-2 px-4 rounded-lg underwater-border mystical-text 
-                             transform hover:scale-105 transition-all duration-300 
-                             flex items-center justify-center gap-2"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                    Open in Lightning Wallet
-                  </button>
-                </div>
-
-                {/* Order Info */}
-                <div className="mystical-bg rounded-lg p-3 text-left underwater-border">
-                  <div className="text-xs text-sirens-pearl space-y-1">
-                    <div className="font-bold text-sirens-gold">Lightning Invoice Details:</div>
-                    <div>Invoice ID: {qrCodeData.orderId}</div>
-                    <div>Amount: ${qrCodeData.amount.toFixed(2)} {qrCodeData.currency}</div>
-                    <div>Items: {cartItems.length} Pokemon games</div>
-                    <div className="mt-2">
-                      {cartItems.map((item, index) => (
-                        <div key={index} className="text-xs">
-                          • {item.name} x{item.quantity} = ${(item.price * item.quantity).toFixed(2)}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center py-8">
-                <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-orange-400" />
-                <p className="comic-text text-white">Generating Lightning invoice for ${totalAmount.toFixed(2)}...</p>
-              </div>
-            )}
-
-            {/* Close Button */}
-            <button
-              onClick={handleCloseQRCode}
-              className="w-full mt-4 bg-gray-600 hover:bg-gray-500 text-white font-bold 
-                       py-2 px-4 rounded-lg comic-border comic-text 
-                       transform hover:scale-105 transition-all duration-300"
-            >
-              Close
-            </button>
+        {/* Feature Highlights */}
+        <div className="grid md:grid-cols-3 gap-6 mb-12">
+          <div className="enchanted-bubble underwater-float">
+            <Anchor className="w-12 h-12 text-sirens-gold mx-auto mb-4 mystical-glow" />
+            <h3 className="fantasy-font text-xl text-sirens-gold mb-2">Deep Sea Adventures</h3>
+            <p className="elegant-text text-sirens-pearl">
+              Explore mysterious underwater realms filled with ancient secrets and hidden treasures.
+            </p>
+          </div>
+          
+          <div className="enchanted-bubble underwater-float" style={{ animationDelay: '0.5s' }}>
+            <Waves className="w-12 h-12 text-sirens-teal mx-auto mb-4 mystical-glow" />
+            <h3 className="fantasy-font text-xl text-sirens-teal mb-2">Oceanic Mysteries</h3>
+            <p className="elegant-text text-sirens-pearl">
+              Uncover the legends of mermaids, sea dragons, and mystical aquatic civilizations.
+            </p>
+          </div>
+          
+          <div className="enchanted-bubble underwater-float" style={{ animationDelay: '1s' }}>
+            <Fish className="w-12 h-12 text-sirens-coral mx-auto mb-4 mystical-glow" />
+            <h3 className="fantasy-font text-xl text-sirens-coral mb-2">Marine Life</h3>
+            <p className="elegant-text text-sirens-pearl">
+              Encounter magnificent sea creatures and build bonds with the ocean's most magical inhabitants.
+            </p>
           </div>
         </div>
-      )}
 
-      {/* Strike Lightning Info */}
-      <div className="text-center">
-        <p className="comic-text text-xs text-gray-400">
-          ⚡ Powered by Strike • Bitcoin Lightning Network • Instant Payments
-        </p>
+        {/* Call to Action */}
+        <div className="enchanted-entrance">
+          <p className="mystical-text text-xl text-sirens-gold font-bold mb-6">
+            🌊 Begin Your Underwater Journey Today! 🧜‍♀️
+          </p>
+          <div className="flex flex-wrap justify-center gap-4 text-sm mystical-text text-sirens-pearl">
+            <span className="flex items-center gap-2">
+              <span className="w-3 h-3 bg-sirens-teal rounded-full mystical-glow"></span>
+              Lightning Fast Payments
+            </span>
+            <span className="flex items-center gap-2">
+              <span className="w-3 h-3 bg-sirens-gold rounded-full mystical-glow"></span>
+              Instant Digital Delivery
+            </span>
+            <span className="flex items-center gap-2">
+              <span className="w-3 h-3 bg-sirens-coral rounded-full mystical-glow"></span>
+              Mystical Gaming Experience
+            </span>
+          </div>
+        </div>
       </div>
-    </div>
+    </section>
   );
 };
 
-export default SpeedCheckoutButton;
+export default Hero;
