@@ -1,404 +1,315 @@
-import React, { useState, useEffect } from 'react';
-import { Zap, CreditCard, Loader2, CheckCircle, AlertCircle, QrCode, ExternalLink, Copy, RefreshCw } from 'lucide-react';
-import { CartItem } from '../types';
-import { useSpeedCheckout, CustomerInfo, ShippingInfo } from '../hooks/useSpeedCheckout';
-import { speedCheckoutService, SpeedQRCodeData } from '../services/speedCheckout';
+import React from 'react';
+import { ArrowLeft, Anchor, Waves, Fish, Crown, Shell, Compass } from 'lucide-react';
 
-interface SpeedCheckoutButtonProps {
-  cartItems: CartItem[];
-  totalAmount: number;
-  onSuccess?: (response: any) => void;
-  onError?: (error: string) => void;
-  disabled?: boolean;
-  className?: string;
+interface InfoPageProps {
+  page: string;
+  onBackToHome: () => void;
 }
 
-const SpeedCheckoutButton: React.FC<SpeedCheckoutButtonProps> = ({
-  cartItems,
-  totalAmount,
-  onSuccess,
-  onError,
-  disabled = false,
-  className = ''
-}) => {
-  const { 
-    checkoutState, 
-    isSpeedReady, 
-    processCheckout, 
-    resetCheckout,
-    getSpeedStatus,
-    convertCartItems
-  } = useSpeedCheckout();
-
-  const [showQRCode, setShowQRCode] = useState(false);
-  const [qrCodeData, setQRCodeData] = useState<SpeedQRCodeData | null>(null);
-  const [paymentStatus, setPaymentStatus] = useState<'pending' | 'checking' | 'completed' | 'failed'>('pending');
-  const [statusCheckInterval, setStatusCheckInterval] = useState<NodeJS.Timeout | null>(null);
-  const [timeRemaining, setTimeRemaining] = useState<number>(0);
-
-  // Cleanup intervals on unmount
-  useEffect(() => {
-    return () => {
-      if (statusCheckInterval) {
-        clearInterval(statusCheckInterval);
-      }
-    };
-  }, [statusCheckInterval]);
-
-  // Timer for QR code expiration
-  useEffect(() => {
-    if (qrCodeData && timeRemaining > 0) {
-      const timer = setTimeout(() => {
-        setTimeRemaining(prev => prev - 1);
-      }, 1000);
-      return () => clearTimeout(timer);
-    } else if (timeRemaining === 0 && qrCodeData) {
-      // QR code expired
-      handleCloseQRCode();
-    }
-  }, [timeRemaining, qrCodeData]);
-
-  const handleGenerateQRCode = async () => {
-    try {
-      if (!speedCheckoutService.isConfigured()) {
-        onError?.('Strike Lightning payment is not configured');
-        return;
-      }
-
-      if (cartItems.length === 0) {
-        onError?.('Cart is empty');
-        return;
-      }
-
-      // Validate total amount matches cart calculation
-      const calculatedTotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-      if (Math.abs(calculatedTotal - totalAmount) > 0.01) {
-        console.warn('Amount mismatch detected:', { calculatedTotal, totalAmount });
-      }
-
-      console.log('⚡ Starting Strike Lightning checkout process...', {
-        totalAmount: totalAmount,
-        itemCount: cartItems.length,
-        items: cartItems.map(item => ({ name: item.name, price: item.price, quantity: item.quantity }))
-      });
-
-      setShowQRCode(true);
-      setPaymentStatus('pending');
-
-      // Create Lightning invoice with exact cart amount
-      const checkoutData = {
-        amount: Number(totalAmount.toFixed(2)), // Ensure proper decimal handling
-        currency: 'USD',
-        items: convertCartItems(cartItems),
-        customer: {
-          email: 'customer@pokeshop.com',
-          firstName: 'Pokemon',
-          lastName: 'Trainer'
-        },
-        metadata: {
-          source: 'pokemon-ecommerce-lightning',
-          cartItemCount: cartItems.length,
-          timestamp: new Date().toISOString(),
-          cartTotal: totalAmount,
-          itemDetails: cartItems.map(item => `${item.name} x${item.quantity}`)
-        }
-      };
-
-      console.log('📦 Lightning invoice data being sent:', {
-        amount: checkoutData.amount,
-        currency: checkoutData.currency,
-        itemCount: checkoutData.items.length,
-        metadata: checkoutData.metadata
-      });
-
-      const qrData = await speedCheckoutService.createPaymentSession(checkoutData);
-      setQRCodeData(qrData);
-
-      // Calculate time remaining (15 minutes)
-      const expiresAt = new Date(qrData.expiresAt).getTime();
-      const now = new Date().getTime();
-      const remaining = Math.max(0, Math.floor((expiresAt - now) / 1000));
-      setTimeRemaining(remaining);
-
-      console.log('✅ Lightning QR Code generated successfully:', {
-        orderId: qrData.orderId,
-        amount: qrData.amount,
-        currency: qrData.currency,
-        expiresIn: `${Math.floor(remaining / 60)}:${(remaining % 60).toString().padStart(2, '0')}`
-      });
-
-      // Start checking payment status
-      startStatusChecking(qrData.orderId);
-
-    } catch (error) {
-      console.error('❌ Lightning QR Code generation error:', error);
-      onError?.(error instanceof Error ? error.message : 'Failed to generate Lightning invoice');
-      setShowQRCode(false);
-    }
-  };
-
-  const startStatusChecking = (orderId: string) => {
-    if (statusCheckInterval) {
-      clearInterval(statusCheckInterval);
-    }
-
-    console.log('🔄 Starting Lightning payment status monitoring for invoice:', orderId);
-
-    const interval = setInterval(async () => {
-      try {
-        setPaymentStatus('checking');
-        const status = await speedCheckoutService.checkPaymentStatus(orderId);
+const InfoPage: React.FC<InfoPageProps> = ({ page, onBackToHome }) => {
+  const getPageContent = () => {
+    switch (page) {
+      case 'mermaid-legends':
+        return {
+          title: 'Mermaid Legends',
+          icon: <Anchor className="w-12 h-12 text-sirens-gold mystical-glow" />,
+          content: (
+            <div className="space-y-6">
+              <p className="elegant-text text-lg text-sirens-pearl leading-relaxed">
+                Dive deep into the ancient tales of mermaids and sea sirens who have guided sailors 
+                through treacherous waters for millennia. These mystical beings possess the power 
+                to control the tides and speak with all creatures of the deep.
+              </p>
+              
+              <div className="grid md:grid-cols-2 gap-6">
+                <div className="enchanted-bubble">
+                  <h3 className="fantasy-font text-xl text-sirens-gold mb-3">The Golden Siren</h3>
+                  <p className="elegant-text text-sirens-pearl">
+                    Legend speaks of a golden-tailed siren who guards the greatest treasures 
+                    of the ocean depths, appearing only to those pure of heart.
+                  </p>
+                </div>
+                
+                <div className="enchanted-bubble">
+                  <h3 className="fantasy-font text-xl text-sirens-teal mb-3">Song of the Deep</h3>
+                  <p className="elegant-text text-sirens-pearl">
+                    The haunting melodies of mermaid songs can calm the fiercest storms 
+                    and reveal hidden underwater passages to lost kingdoms.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )
+        };
         
-        if (status.success && status.status === 'completed') {
-          console.log('✅ Lightning payment completed successfully!', status);
-          setPaymentStatus('completed');
-          clearInterval(interval);
-          setStatusCheckInterval(null);
-          
-          // Notify success
-          onSuccess?.(status);
-          
-          // Close QR code modal after success
-          setTimeout(() => {
-            handleCloseQRCode();
-          }, 3000);
-          
-        } else if (status.status === 'failed') {
-          console.log('❌ Lightning payment failed', status);
-          setPaymentStatus('failed');
-          clearInterval(interval);
-          setStatusCheckInterval(null);
-          onError?.(status.error?.message || 'Lightning payment failed');
-        } else {
-          console.log('⏳ Lightning payment still pending...', status);
-          setPaymentStatus('pending');
-        }
-      } catch (error) {
-        console.error('❌ Lightning status check error:', error);
-        setPaymentStatus('pending');
-      }
-    }, 3000); // Check every 3 seconds
-
-    setStatusCheckInterval(interval);
-  };
-
-  const handleCloseQRCode = () => {
-    console.log('🔒 Closing Lightning QR code modal');
-    setShowQRCode(false);
-    setQRCodeData(null);
-    setPaymentStatus('pending');
-    setTimeRemaining(0);
-    
-    if (statusCheckInterval) {
-      clearInterval(statusCheckInterval);
-      setStatusCheckInterval(null);
+      case 'ocean-depths':
+        return {
+          title: 'Ocean Depths Guide',
+          icon: <Waves className="w-12 h-12 text-sirens-teal mystical-glow" />,
+          content: (
+            <div className="space-y-6">
+              <p className="elegant-text text-lg text-sirens-pearl leading-relaxed">
+                Explore the mysterious layers of our vast oceans, from the sunlit surface 
+                to the abyssal depths where ancient creatures dwell in eternal darkness.
+              </p>
+              
+              <div className="space-y-4">
+                <div className="enchanted-bubble">
+                  <h3 className="fantasy-font text-xl text-sirens-gold mb-3">Sunlight Zone (0-200m)</h3>
+                  <p className="elegant-text text-sirens-pearl">
+                    Where colorful coral reefs flourish and tropical fish dance in the warm currents.
+                  </p>
+                </div>
+                
+                <div className="enchanted-bubble">
+                  <h3 className="fantasy-font text-xl text-sirens-teal mb-3">Twilight Zone (200-1000m)</h3>
+                  <p className="elegant-text text-sirens-pearl">
+                    Home to bioluminescent creatures that create their own magical light shows.
+                  </p>
+                </div>
+                
+                <div className="enchanted-bubble">
+                  <h3 className="fantasy-font text-xl text-sirens-purple mb-3">Abyssal Zone (4000m+)</h3>
+                  <p className="elegant-text text-sirens-pearl">
+                    The deepest realm where ancient sea dragons and forgotten civilizations rest.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )
+        };
+        
+      case 'aquatic-gaming':
+        return {
+          title: 'Aquatic Gaming Tips',
+          icon: <Fish className="w-12 h-12 text-sirens-coral mystical-glow" />,
+          content: (
+            <div className="space-y-6">
+              <p className="elegant-text text-lg text-sirens-pearl leading-relaxed">
+                Master the art of underwater gaming with these essential tips for navigating 
+                aquatic adventures and conquering the seven seas.
+              </p>
+              
+              <div className="grid md:grid-cols-2 gap-6">
+                <div className="enchanted-bubble">
+                  <h3 className="fantasy-font text-xl text-sirens-gold mb-3">Underwater Navigation</h3>
+                  <p className="elegant-text text-sirens-pearl">
+                    Use sonar and underwater landmarks to navigate the depths. Follow the 
+                    bioluminescent trails left by friendly sea creatures.
+                  </p>
+                </div>
+                
+                <div className="enchanted-bubble">
+                  <h3 className="fantasy-font text-xl text-sirens-teal mb-3">Marine Life Interaction</h3>
+                  <p className="elegant-text text-sirens-pearl">
+                    Approach sea creatures slowly and calmly. Many will become allies 
+                    if you show respect for their underwater domain.
+                  </p>
+                </div>
+                
+                <div className="enchanted-bubble">
+                  <h3 className="fantasy-font text-xl text-sirens-coral mb-3">Treasure Hunting</h3>
+                  <p className="elegant-text text-sirens-pearl">
+                    Look for glinting objects in coral reefs and underwater caves. 
+                    The most valuable treasures are often guarded by sea guardians.
+                  </p>
+                </div>
+                
+                <div className="enchanted-bubble">
+                  <h3 className="fantasy-font text-xl text-sirens-purple mb-3">Deep Sea Survival</h3>
+                  <p className="elegant-text text-sirens-pearl">
+                    Manage your oxygen carefully and upgrade your diving equipment. 
+                    Always have an escape route planned when exploring deep trenches.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )
+        };
+        
+      case 'sea-creatures':
+        return {
+          title: 'Sea Creature Lore',
+          icon: <Shell className="w-12 h-12 text-sirens-purple mystical-glow" />,
+          content: (
+            <div className="space-y-6">
+              <p className="elegant-text text-lg text-sirens-pearl leading-relaxed">
+                Discover the magnificent creatures that inhabit our oceans, from the smallest 
+                seahorse to the mightiest kraken that dwells in the deepest trenches.
+              </p>
+              
+              <div className="space-y-4">
+                <div className="enchanted-bubble">
+                  <h3 className="fantasy-font text-xl text-sirens-gold mb-3">🐙 The Great Kraken</h3>
+                  <p className="elegant-text text-sirens-pearl">
+                    Ancient guardian of the deep ocean trenches, this colossal octopus 
+                    is said to control the ocean currents with its massive tentacles.
+                  </p>
+                </div>
+                
+                <div className="enchanted-bubble">
+                  <h3 className="fantasy-font text-xl text-sirens-teal mb-3">🦈 Celestial Sharks</h3>
+                  <p className="elegant-text text-sirens-pearl">
+                    These mystical sharks have scales that shimmer like stars and can 
+                    navigate by the constellations reflected on the ocean surface.
+                  </p>
+                </div>
+                
+                <div className="enchanted-bubble">
+                  <h3 className="fantasy-font text-xl text-sirens-coral mb-3">🐠 Rainbow Reef Fish</h3>
+                  <p className="elegant-text text-sirens-pearl">
+                    Tropical fish that change colors with their emotions, creating 
+                    spectacular light shows among the coral gardens.
+                  </p>
+                </div>
+                
+                <div className="enchanted-bubble">
+                  <h3 className="fantasy-font text-xl text-sirens-purple mb-3">🐋 Song Whales</h3>
+                  <p className="elegant-text text-sirens-pearl">
+                    Majestic whales whose songs can be heard across entire ocean basins, 
+                    carrying messages between distant underwater kingdoms.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )
+        };
+        
+      case 'underwater-reviews':
+        return {
+          title: 'Underwater Game Reviews',
+          icon: <Crown className="w-12 h-12 text-sirens-gold mystical-glow" />,
+          content: (
+            <div className="space-y-6">
+              <p className="elegant-text text-lg text-sirens-pearl leading-relaxed">
+                Expert reviews of the finest aquatic gaming experiences, rated by our 
+                council of sea gaming masters and mermaid critics.
+              </p>
+              
+              <div className="space-y-4">
+                <div className="enchanted-bubble">
+                  <h3 className="fantasy-font text-xl text-sirens-gold mb-3">⭐⭐⭐⭐⭐ Subnautica</h3>
+                  <p className="elegant-text text-sirens-pearl mb-2">
+                    "A masterpiece of underwater survival that captures the true terror 
+                    and beauty of the deep ocean. Every dive feels like a real adventure."
+                  </p>
+                  <p className="mystical-text text-sm text-sirens-teal">- Marina Deepcurrent, Sea Gaming Expert</p>
+                </div>
+                
+                <div className="enchanted-bubble">
+                  <h3 className="fantasy-font text-xl text-sirens-teal mb-3">⭐⭐⭐⭐ ABZÛ</h3>
+                  <p className="elegant-text text-sirens-pearl mb-2">
+                    "A meditative journey through stunning underwater landscapes. 
+                    Perfect for those seeking peace beneath the waves."
+                  </p>
+                  <p className="mystical-text text-sm text-sirens-teal">- Coral Wavesinger, Mermaid Critic</p>
+                </div>
+                
+                <div className="enchanted-bubble">
+                  <h3 className="fantasy-font text-xl text-sirens-coral mb-3">⭐⭐⭐⭐⭐ Endless Ocean Luminous</h3>
+                  <p className="elegant-text text-sirens-pearl mb-2">
+                    "The most realistic marine life simulation ever created. 
+                    Swimming with virtual dolphins feels magical."
+                  </p>
+                  <p className="mystical-text text-sm text-sirens-teal">- Neptune Tidecaller, Ocean Sage</p>
+                </div>
+              </div>
+            </div>
+          )
+        };
+        
+      case 'aquatic-community':
+        return {
+          title: 'Aquatic Gaming Community',
+          icon: <Compass className="w-12 h-12 text-sirens-teal mystical-glow" />,
+          content: (
+            <div className="space-y-6">
+              <p className="elegant-text text-lg text-sirens-pearl leading-relaxed">
+                Join our thriving community of underwater gaming enthusiasts, where sea 
+                captains and mermaids share their greatest aquatic adventures.
+              </p>
+              
+              <div className="grid md:grid-cols-2 gap-6">
+                <div className="enchanted-bubble">
+                  <h3 className="fantasy-font text-xl text-sirens-gold mb-3">Deep Sea Explorers Guild</h3>
+                  <p className="elegant-text text-sirens-pearl">
+                    Connect with fellow deep sea adventurers and share your most 
+                    thrilling underwater discoveries and close encounters.
+                  </p>
+                </div>
+                
+                <div className="enchanted-bubble">
+                  <h3 className="fantasy-font text-xl text-sirens-teal mb-3">Mermaid Gaming Circle</h3>
+                  <p className="elegant-text text-sirens-pearl">
+                    A magical gathering place for aquatic gaming enthusiasts to 
+                    discuss strategies and share gameplay videos.
+                  </p>
+                </div>
+                
+                <div className="enchanted-bubble">
+                  <h3 className="fantasy-font text-xl text-sirens-coral mb-3">Treasure Hunters Society</h3>
+                  <p className="elegant-text text-sirens-pearl">
+                    Dedicated to finding the rarest underwater treasures and 
+                    hidden secrets in aquatic gaming worlds.
+                  </p>
+                </div>
+                
+                <div className="enchanted-bubble">
+                  <h3 className="fantasy-font text-xl text-sirens-purple mb-3">Ocean Racing League</h3>
+                  <p className="elegant-text text-sirens-pearl">
+                    Competitive underwater racing tournaments featuring submarines, 
+                    sea creatures, and mystical water vehicles.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )
+        };
+        
+      default:
+        return {
+          title: 'Unknown Page',
+          icon: <Fish className="w-12 h-12 text-sirens-pearl" />,
+          content: <p className="elegant-text text-sirens-pearl">Page not found.</p>
+        };
     }
   };
 
-  const handleCopyPaymentUrl = () => {
-    if (qrCodeData?.paymentUrl) {
-      navigator.clipboard.writeText(qrCodeData.paymentUrl);
-      
-      // Show copied notification
-      const notification = document.createElement('div');
-      notification.className = 'fixed top-20 right-4 bg-pokemon-yellow text-black px-4 py-2 rounded-full comic-border comic-text font-bold z-50 animate-bounce-in';
-      notification.textContent = 'Lightning invoice copied!';
-      document.body.appendChild(notification);
-      
-      setTimeout(() => {
-        notification.remove();
-      }, 2000);
-    }
-  };
-
-  const formatTime = (seconds: number): string => {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
-  };
-
-  const speedStatus = getSpeedStatus();
-
-  // Show configuration error if Strike is not configured
-  if (!speedStatus.configured) {
-    return (
-      <div className="bg-gray-700 bg-opacity-80 rounded-lg p-4 text-center">
-        <AlertCircle className="w-6 h-6 mx-auto mb-2 text-red-400" />
-        <p className="comic-text text-sm text-red-400 font-bold">Strike Lightning Not Configured</p>
-        <p className="comic-text text-xs text-gray-300 mt-1">
-          Set VITE_STRIKE_API_KEY in your environment
-        </p>
-        <div className="mt-2 text-xs text-gray-400">
-          <div>API Key: {speedStatus.apiKey ? '✅' : '❌'}</div>
-          <div>Provider: Strike Lightning Network</div>
-        </div>
-      </div>
-    );
-  }
+  const pageContent = getPageContent();
 
   return (
-    <div className="space-y-4">
-      {/* Strike Lightning Status */}
-      <div className="bg-gray-700 bg-opacity-80 rounded-lg p-3">
-        <div className="flex items-center gap-2 mb-2">
-          <CheckCircle className="w-4 h-4 text-green-400" />
-          <span className="comic-text text-sm text-green-400 font-bold">Strike Lightning Ready</span>
+    <div className="min-h-screen relative z-10">
+      <div className="container mx-auto px-4 py-8">
+        {/* Back Button */}
+        <button
+          onClick={onBackToHome}
+          className="mb-8 flex items-center gap-3 enchanted-button px-6 py-3 rounded-full
+                   transform hover:scale-105 transition-all duration-300 treasure-shadow"
+        >
+          <ArrowLeft className="w-5 h-5" />
+          <span className="mystical-text font-bold">Back to Sirens Fortune</span>
+        </button>
+
+        {/* Page Header */}
+        <div className="text-center mb-12 enchanted-entrance">
+          <div className="mb-6">
+            {pageContent.icon}
+          </div>
+          <h1 className="fantasy-font text-4xl md:text-5xl text-sirens-gold mb-4 mystical-glow">
+            {pageContent.title}
+          </h1>
+          <div className="w-24 h-1 bg-sirens-teal mx-auto rounded-full mystical-glow"></div>
         </div>
-        <div className="text-xs text-gray-300 space-y-1">
-          <div>✅ API Key: {speedStatus.apiKey ? 'Configured' : 'Missing'}</div>
-          <div>⚡ Provider: Strike Lightning Network</div>
-          <div>✅ Cart Total: ${totalAmount.toFixed(2)} ({cartItems.length} items)</div>
-          <div>✅ Items: {cartItems.map(item => `${item.name} x${item.quantity}`).join(', ')}</div>
-        </div>
-      </div>
 
-      {/* Lightning QR Code Checkout Button */}
-      <button
-        onClick={handleGenerateQRCode}
-        disabled={disabled || !speedStatus.configured || cartItems.length === 0}
-        className={`w-full bg-gradient-to-r from-orange-500 to-yellow-500 hover:from-orange-600 hover:to-yellow-600 
-                   text-white font-bold py-4 px-6 rounded-full comic-border comic-text text-lg 
-                   transform hover:scale-105 transition-all duration-300 comic-button comic-shadow 
-                   flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed
-                   ${className}`}
-      >
-        <Zap className="w-6 h-6" />
-        ⚡ LIGHTNING PAY - ${totalAmount.toFixed(2)}
-      </button>
-
-      {/* Lightning QR Code Modal */}
-      {showQRCode && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center p-4">
-          <div className="bg-gray-800 rounded-2xl comic-border border-4 border-orange-400 p-6 max-w-md w-full">
-            {/* Header */}
-            <div className="text-center mb-4">
-              <h3 className="comic-font text-2xl text-orange-400 mb-2">⚡ Lightning Payment</h3>
-              <p className="comic-text text-white font-bold text-xl">
-                Pay ${totalAmount.toFixed(2)} USD
-              </p>
-              <p className="comic-text text-sm text-gray-300 mt-1">
-                {cartItems.length} Pokemon game{cartItems.length !== 1 ? 's' : ''}
-              </p>
-              {timeRemaining > 0 && (
-                <p className="comic-text text-sm text-orange-400 mt-2 font-bold">
-                  ⏰ Expires in: {formatTime(timeRemaining)}
-                </p>
-              )}
-            </div>
-
-            {/* QR Code Display */}
-            {qrCodeData ? (
-              <div className="text-center space-y-4">
-                {/* QR Code */}
-                <div className="bg-white p-4 rounded-lg mx-auto inline-block comic-border">
-                  <img 
-                    src={qrCodeData.qrCode} 
-                    alt="Lightning Payment QR Code"
-                    className="w-48 h-48 mx-auto"
-                  />
-                </div>
-
-                {/* Payment Status */}
-                <div className="space-y-2">
-                  {paymentStatus === 'pending' && (
-                    <div className="flex items-center justify-center gap-2 text-orange-400">
-                      <Zap className="w-5 h-5 animate-pulse" />
-                      <span className="comic-text font-bold">Scan to pay ${totalAmount.toFixed(2)} via Lightning</span>
-                    </div>
-                  )}
-                  
-                  {paymentStatus === 'checking' && (
-                    <div className="flex items-center justify-center gap-2 text-blue-400">
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      <span className="comic-text">Checking Lightning payment...</span>
-                    </div>
-                  )}
-                  
-                  {paymentStatus === 'completed' && (
-                    <div className="flex items-center justify-center gap-2 text-green-400">
-                      <CheckCircle className="w-5 h-5" />
-                      <span className="comic-text font-bold">Lightning payment of ${totalAmount.toFixed(2)} successful!</span>
-                    </div>
-                  )}
-                  
-                  {paymentStatus === 'failed' && (
-                    <div className="flex items-center justify-center gap-2 text-red-400">
-                      <AlertCircle className="w-5 h-5" />
-                      <span className="comic-text">Lightning payment failed - Try Again</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Action Buttons */}
-                <div className="space-y-2">
-                  <button
-                    onClick={handleCopyPaymentUrl}
-                    className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold 
-                             py-2 px-4 rounded-lg comic-border comic-text 
-                             transform hover:scale-105 transition-all duration-300 
-                             flex items-center justify-center gap-2"
-                  >
-                    <Copy className="w-4 h-4" />
-                    Copy Lightning Invoice
-                  </button>
-
-                  <button
-                    onClick={() => window.open(qrCodeData.paymentUrl, '_blank')}
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold 
-                             py-2 px-4 rounded-lg comic-border comic-text 
-                             transform hover:scale-105 transition-all duration-300 
-                             flex items-center justify-center gap-2"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                    Open in Lightning Wallet
-                  </button>
-                </div>
-
-                {/* Order Info */}
-                <div className="bg-gray-700 rounded-lg p-3 text-left">
-                  <div className="text-xs text-gray-300 space-y-1">
-                    <div className="font-bold text-orange-400">Lightning Invoice Details:</div>
-                    <div>Invoice ID: {qrCodeData.orderId}</div>
-                    <div>Amount: ${qrCodeData.amount.toFixed(2)} {qrCodeData.currency}</div>
-                    <div>Items: {cartItems.length} Pokemon games</div>
-                    <div className="mt-2">
-                      {cartItems.map((item, index) => (
-                        <div key={index} className="text-xs">
-                          • {item.name} x{item.quantity} = ${(item.price * item.quantity).toFixed(2)}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center py-8">
-                <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-orange-400" />
-                <p className="comic-text text-white">Generating Lightning invoice for ${totalAmount.toFixed(2)}...</p>
-              </div>
-            )}
-
-            {/* Close Button */}
-            <button
-              onClick={handleCloseQRCode}
-              className="w-full mt-4 bg-gray-600 hover:bg-gray-500 text-white font-bold 
-                       py-2 px-4 rounded-lg comic-border comic-text 
-                       transform hover:scale-105 transition-all duration-300"
-            >
-              Close
-            </button>
+        {/* Page Content */}
+        <div className="max-w-4xl mx-auto">
+          <div className="mystical-bg underwater-border rounded-2xl p-8 treasure-shadow">
+            {pageContent.content}
           </div>
         </div>
-      )}
-
-      {/* Strike Lightning Info */}
-      <div className="text-center">
-        <p className="comic-text text-xs text-gray-400">
-          ⚡ Powered by Strike • Bitcoin Lightning Network • Instant Payments
-        </p>
       </div>
     </div>
   );
 };
 
-export default SpeedCheckoutButton;
+export default InfoPage;
